@@ -1,3 +1,19 @@
+# TODO
+- [ ] run the t2b finetune for a couple iterations on their toy dataset and verify the model is learning. change the bucket config for the 64f config to
+        `bucket_config = {
+    "360p": {1: (1.0, 128), 32: (1.0, 4), 64: (1.0, 2)},
+}`.
+- [ ] for bbox ratios, interporlate missing frames for each player. len(bbox_ratios) for each player should equal num_frames for video.
+- [ ] perform some validation for the bbox annotations. make sure alignments are correct
+- [ ] write up a script to draw the bbox trajectory given a single player's trajectory. can be simple plot. integrate with wandb logging during inference to plot the bbox trajectory.
+
+
+
+
+
+
+
+
 # Text2Bricks: Fine-tune Open-Sora For Generating Brick Style Animations.
 
 <div align="center">
