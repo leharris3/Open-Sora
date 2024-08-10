@@ -85,14 +85,6 @@ batch_size = None
 grad_clip = 1.0
 
 eval_prompts = [
-        "A scuba diver on a coral reef with schools of fish swimming, and a sea turtle and an octopus.",
-        "People eating ice cream and drinkin espresso outside of a cafe on a narrow street in Rome. There are stores along the street selling a variety of wares. One shop sells fruits. Another shop sells vegetables. A third shop sells christmas ornaments. Many people walk along the street.",
-        "An astronaut walking on the moon, with the effects of gravity making the walk appear very bouncy.",
-        "A person walks down a garden path. The path is surrounded by gorgeous and colorful flowers, lush bushes, and grand trees. Butterflies and bees zip around the scene in the background. The person is walking directly towards the camera.",
-        "A ninja wearing a red outfit jumps from one roof of a building to a second building's roof. The full moon is in sight directly behind the ninja.",
-        "A newly married couple do their first dance at a wedding. Both partners are wearing white dresses, and are slow dancing in the center of a beautifully decorated wedding hall.",
-        "A fat rabbit wearing a purple robe walking through a fantasy landscape",
-        "A young man walks alone by the seaside",
         "A basketball player shooting free throws.",
         "A basketball player getting fouled while driving to the basket.",
         "A basketball player making a half-court shot.",
@@ -108,4 +100,4 @@ eval_steps = ckpt_every
 wandb_project_name = "text2bricks-360p-32f"
 wandb_project_entity = None
 
-exp_id = "basketball-360p-32f-scratch"
+exp_id = "test"

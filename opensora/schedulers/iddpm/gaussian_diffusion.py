@@ -728,7 +728,7 @@ class GaussianDiffusion:
         output = torch.where((t == 0), decoder_nll, kl)
         return {"output": output, "pred_xstart": out["pred_xstart"]}
 
-    def training_losses(self, model, x_start, t, model_kwargs=None, noise=None, mask=None, weights=None):
+    def training_losses(self, model, x_start, t, model_kwargs=None, noise=None, mask=None, weights=None, bbox_ratios=None):
         """
         Compute training losses for a single timestep.
         :param model: the model to evaluate loss on.

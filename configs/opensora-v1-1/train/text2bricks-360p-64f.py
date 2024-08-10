@@ -10,6 +10,9 @@ dataset = dict(
 bucket_config = {
     "360p": {1: (1.0, 128), 32: (1.0, 4), 64: (1.0, 2)},
 }
+# bucket_config = {
+#     "360p": {32: (1.0, 4)},
+# }
 mask_ratios = {
     "mask_no": 0.75,
     "mask_quarter_random": 0.025,
@@ -83,8 +86,6 @@ grad_clip = 1.0
 eval_prompts = [
         "A basketball player missing a three-point shot",
         "A basketball player assisting on a play",
-        "A basketball player setting a screen",
-        "A basketball player grabbing a rebound",
         "A basketball player committing a turnover",     
 ]
 
@@ -97,4 +98,4 @@ eval_steps = ckpt_every
 wandb_project_name = "STDiT-Motion"
 wandb_project_entity = "Video-Generation-For-Structured-Behavior-Modeling"
 
-exp_id = "t2b-bs128"
+exp_id = "motion-64-single-traj"

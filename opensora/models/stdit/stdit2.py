@@ -25,7 +25,7 @@ from opensora.models.layers.blocks import (
 from opensora.registry import MODELS
 from transformers import PretrainedConfig, PreTrainedModel
 from opensora.utils.ckpt_utils import load_checkpoint
-from TrailBlazer.CrossAttn.InjectorProc import InjectorProcessor
+from opensora.models.adapter.bbox_adapter import BboxAdapter
 
 class STDiT2Block(nn.Module):
     def __init__(
@@ -44,14 +44,7 @@ class STDiT2Block(nn.Module):
         self.hidden_size = hidden_size
         self.enable_flash_attn = enable_flash_attn
         self._enable_sequence_parallelism = enable_sequence_parallelism
-        bbox_per_frame = [[0.5, 0.35, 1.0, 0.65], [0.4920634920634921, 0.35, 0.9920634920634921, 0.65], [0.48412698412698413, 0.35, 0.9841269841269842, 0.65], [0.47619047619047616, 0.35, 0.9761904761904762, 0.65], [0.46825396825396826, 0.35, 0.9682539682539683, 0.65], [0.46031746031746035, 0.35000000000000003, 0.9603174603174603, 0.6500000000000001], [0.4523809523809524, 0.35, 0.9523809523809523, 0.65], [0.4444444444444444, 0.3499999999999999, 0.9444444444444444, 0.6499999999999999], [0.4365079365079365, 0.35, 0.9365079365079365, 0.65], [0.4285714285714286, 0.35, 0.9285714285714286, 0.65], [0.42063492063492064, 0.35, 0.9206349206349207, 0.65], [0.4126984126984127, 0.35, 0.9126984126984127, 0.65], [0.40476190476190477, 0.35, 0.9047619047619048, 0.65], [0.39682539682539686, 0.35, 0.8968253968253969, 0.65], [0.3888888888888889, 0.35, 0.8888888888888888, 0.6499999999999999], [0.38095238095238093, 0.3499999999999999, 0.8809523809523809, 0.65], [0.373015873015873, 0.35, 0.873015873015873, 0.65], [0.3650793650793651, 0.35000000000000003, 0.8650793650793651, 0.65], [0.35714285714285715, 0.35, 0.8571428571428572, 0.65], [0.3492063492063492, 0.35, 0.8492063492063492, 0.65], [0.3412698412698413, 0.35, 0.8412698412698413, 0.65], [0.33333333333333337, 0.35, 0.8333333333333334, 0.6500000000000001], [0.3253968253968254, 0.35, 0.8253968253968254, 0.65], [0.31746031746031744, 0.35, 0.8174603174603174, 0.6499999999999999], [0.30952380952380953, 0.35, 0.8095238095238095, 0.65], [0.3015873015873016, 0.35, 0.8015873015873016, 0.65], [0.29365079365079366, 0.35, 0.7936507936507937, 0.65], [0.2857142857142857, 0.35, 0.7857142857142857, 0.65], [0.2777777777777778, 0.35, 0.7777777777777778, 0.65], [0.2698412698412699, 0.35, 0.7698412698412699, 0.6500000000000001], [0.2619047619047619, 0.35, 0.7619047619047619, 0.65], [0.25396825396825395, 0.35, 0.753968253968254, 0.6499999999999999], [0.24603174603174605, 0.35, 0.746031746031746, 0.65], [0.23809523809523808, 0.35, 0.7380952380952381, 0.65], [0.23015873015873017, 0.35, 0.7301587301587302, 0.65], [0.2222222222222222, 0.35, 0.7222222222222222, 0.65], [0.2142857142857143, 0.35, 0.7142857142857143, 0.65], [0.20634920634920634, 0.35, 0.7063492063492063, 0.65], [0.19841269841269843, 0.35, 0.6984126984126984, 0.65], [0.19047619047619047, 0.35, 0.6904761904761905, 0.65], [0.18253968253968256, 0.35, 0.6825396825396826, 0.65], [0.1746031746031746, 0.35, 0.6746031746031746, 0.65], [0.16666666666666669, 0.35, 0.6666666666666667, 0.65], [0.15873015873015872, 0.35, 0.6587301587301587, 0.65], [0.1507936507936508, 0.35, 0.6507936507936508, 0.65], [0.14285714285714285, 0.35, 0.6428571428571428, 0.65], [0.13492063492063494, 0.35, 0.6349206349206349, 0.65], [0.12698412698412698, 0.35, 0.626984126984127, 0.65], [0.11904761904761907, 0.35, 0.6190476190476191, 0.65], [0.1111111111111111, 0.35, 0.6111111111111112, 0.6499999999999999], [0.1031746031746032, 0.35, 0.6031746031746033, 0.6499999999999999], [0.09523809523809523, 0.35, 0.5952380952380952, 0.65], [0.08730158730158732, 0.35, 0.5873015873015873, 0.65], [0.07936507936507936, 0.35, 0.5793650793650793, 0.65], [0.07142857142857145, 0.35, 0.5714285714285714, 0.65], [0.06349206349206349, 0.35, 0.5634920634920635, 0.65], [0.05555555555555558, 0.35, 0.5555555555555556, 0.65], [0.047619047619047616, 0.35, 0.5476190476190477, 0.65], [0.03968253968253971, 0.35, 0.5396825396825398, 0.65], [0.031746031746031744, 0.35, 0.5317460317460317, 0.65], [0.023809523809523836, 0.35, 0.5238095238095238, 0.65], [0.015873015873015872, 0.35, 0.5158730158730158, 0.65], [0.007936507936507964, 0.35, 0.5079365079365079, 0.65], [0.0, 0.35, 0.5, 0.65]]
-        # bbox injector
-        self.injector = InjectorProcessor(
-                    bbox_per_frame=bbox_per_frame,
-                    strengthen_scale=0.125,
-                    weaken_scale=0.001,
-                    is_spatial=True,
-                )
+    
         # spatial branch
         self.norm1 = get_layernorm(hidden_size, eps=1e-6, affine=False, use_kernel=enable_layernorm_kernel)
         self.attn = Attention(
@@ -122,11 +115,7 @@ class STDiT2Block(nn.Module):
         x_s = rearrange(x_m, "B (T S) C -> (B T) S C", T=T, S=S)
         x_s = self.attn(x_s)
         x_s = rearrange(x_s, "(B T) S C -> B (T S) C", T=T, S=S)
-        # x_s = rearrange(x_m, "B (T H W) C -> (B T) H W C", B=2, T=T, H=23, W=40)
-        # x_s= self.injector(x_s, 40, 23)
-        # x_s = rearrange(x_s, "(B T) H W C -> (B T) (H W) C", B=2, T=T, H=23, W=40)
-        # x_s = self.attn(x_s)
-        # x_s = rearrange(x_s, "(B T) (H W) C -> B (T H W) C", B=2, T=T, H=23, W=40)
+      
         if x_mask is not None:
             x_s_zero = gate_msa_zero * x_s
             x_s = gate_msa * x_s
@@ -142,19 +131,10 @@ class STDiT2Block(nn.Module):
             x_m = self.t_mask_select(x_mask, x_m, x_m_zero, T, S)
 
         # temporal branch
-        # x_t = rearrange(x_m, "B (T H W) C -> (B T) H W C", B=2, T=T, H=23, W=40)
-        # x_t= self.injector(x_t, 40, 23)
-        # x_t = rearrange(x_t, "(B T) H W C -> (B T) (H W) C", B=2, T=T, H=23, W=40)
-        # x_t = self.attn(x_t)
-        # x_t = rearrange(x_t, "(B T) (H W) C -> B (T H W) C", B=2, T=T, H=23, W=40)
         x_t = rearrange(x_m, "B (T S) C -> (B S) T C", T=T, S=S)
         x_t = self.attn_temp(x_t)
         x_t = rearrange(x_t, "(B S) T C -> B (T S) C", T=T, S=S)
-        # x_t = rearrange(x_m, "B (T S) C -> (B S) T C", T=T, S=S) #[1840, 64, 1152]
-        # x_t = self.attn_temp(x_t)
-        # x_t = rearrange(x_t, "(B H W) T C -> (B T) H W C", B=2, T=T, H=23, W=40)
-        # x_t= self.injector(x_t, 40, 23)
-        # x_t = rearrange(x_t, "(B T) H W C -> B (T H W) C", B=2, T=T, H=23, W=40)
+
         if x_mask is not None:
             x_t_zero = gate_tmp_zero * x_t
             x_t = gate_tmp * x_t
@@ -252,6 +232,8 @@ class STDiT2(PreTrainedModel):
         self.mlp_ratio = config.mlp_ratio
         self.enable_flash_attn = config.enable_flash_attn
         self.enable_layernorm_kernel = config.enable_layernorm_kernel
+        # adapter
+        self.bbox_adapter = BboxAdapter(self.hidden_size, pretrained=False)
 
         # support dynamic input
         self.patch_size = config.patch_size
@@ -321,7 +303,7 @@ class STDiT2(PreTrainedModel):
         return (T, H, W)
 
     def forward(
-        self, x, timestep, y, mask=None, x_mask=None, num_frames=None, height=None, width=None, ar=None, fps=None
+        self, x, timestep, y, mask=None, x_mask=None, num_frames=None, height=None, width=None, ar=None, fps=None, bbox_ratios=None
     ):
         """
         Forward pass of STDiT.
@@ -330,6 +312,7 @@ class STDiT2(PreTrainedModel):
             timestep (torch.Tensor): diffusion time steps; of shape [B]
             y (torch.Tensor): representation of prompts; of shape [B, 1, N_token, C]
             mask (torch.Tensor): mask for selecting prompt tokens; of shape [B, N_token]
+            bbox_ratios (torch.Tensor): bbox ratios for single subject; of shape [B, T, 4]
 
         Returns:
             x (torch.Tensor): output latent representation; of shape [B, C, T, H, W]
@@ -390,13 +373,41 @@ class STDiT2(PreTrainedModel):
             t0_spc_mlp = None
             t0_tmp_mlp = None
 
+        # prepare bbox traj
+        if bbox_ratios is not None:
+            B, T, _ = bbox_ratios.shape
+            bbox_features = self.bbox_adapter(bbox_ratios.view(B*T, 4), T, B)  # [B, T', hidden_size]
+
+        else:
+            bbox_ratios = torch.load('bbox_ratios.pth').to(device=x.device,dtype=x.dtype)
+            B, T, _ = bbox_ratios.shape
+            bbox_features = self.bbox_adapter(bbox_ratios.view(B*T, 4), T, B)  # [B, T', hidden_size]
         # prepare y
+        # y = self.y_embedder(y, self.training)  # [B, 1, N_token, C]
+
+        # if mask is not None:
+        #     if mask.shape[0] != y.shape[0]:
+        #         mask = mask.repeat(y.shape[0] // mask.shape[0], 1)
+        #     mask = mask.squeeze(1).squeeze(1)
+        #     y = y.squeeze(1).masked_select(mask.unsqueeze(-1) != 0).view(1, -1, x.shape[-1])
+        #     y_lens = mask.sum(dim=1).tolist()
+        # else:
+        #     y_lens = [y.shape[2]] * y.shape[0]
+        #     y = y.squeeze(1).view(1, -1, x.shape[-1])
         y = self.y_embedder(y, self.training)  # [B, 1, N_token, C]
+        if bbox_features is not None:
+            # Reshape bbox_features to match y's dimensions
+            bbox_features = bbox_features.unsqueeze(1)  # [B, 1, T', hidden_size]
+
+            y = torch.cat([y, bbox_features], dim=2)  # Concatenate along the token dimension
 
         if mask is not None:
             if mask.shape[0] != y.shape[0]:
                 mask = mask.repeat(y.shape[0] // mask.shape[0], 1)
             mask = mask.squeeze(1).squeeze(1)
+            # Create a mask for bbox_features (assuming all bbox features are valid)
+            bbox_mask = torch.ones(B, bbox_features.shape[2], device=mask.device, dtype=mask.dtype)
+            mask = torch.cat([mask, bbox_mask], dim=1)
             y = y.squeeze(1).masked_select(mask.unsqueeze(-1) != 0).view(1, -1, x.shape[-1])
             y_lens = mask.sum(dim=1).tolist()
         else:

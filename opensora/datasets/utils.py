@@ -11,6 +11,7 @@ from PIL import Image
 from torchvision.datasets.folder import IMG_EXTENSIONS, pil_loader
 from torchvision.io import write_video
 from torchvision.utils import save_image
+from typing import List, Optional
 
 from . import video_transforms
 
@@ -61,7 +62,7 @@ def temporal_random_crop(vframes, num_frames, frame_interval):
     assert end_frame_ind - start_frame_ind >= num_frames
     frame_indice = np.linspace(start_frame_ind, end_frame_ind - 1, num_frames, dtype=int)
     video = vframes[frame_indice]
-    return video
+    return video, frame_indice
 
 
 def get_transforms_video(name="center", image_size=(256, 256)):
@@ -204,3 +205,48 @@ def resize_crop_to_fill(pil_image, image_size):
     arr = np.array(image)
     assert i + th <= arr.shape[0] and j + tw <= arr.shape[1]
     return Image.fromarray(arr[i : i + th, j : j + tw])
+
+
+def transform_bbox_ratios(bbox_ratios_str: str, frame_indices: Optional[List[int]] = None) -> torch.Tensor:
+    """
+    Transform the bbox_ratios string from the CSV into a PyTorch tensor and select specific frames if requested.
+    Throws an error if the resulting tensor has fewer frames than specified in frame_indices.
+    
+    Args:
+    bbox_ratios_str (str): A space-separated string of bbox ratio values.
+    frame_indices (List[int], optional): List of frame indices to select. If None, all frames are returned.
+    
+    Returns:
+    torch.Tensor: A 2D tensor where each row represents a bbox with 4 values for the selected frames.
+    
+    Raises:
+    ValueError: If frame_indices is provided and the resulting tensor has fewer frames than specified.
+    """
+    # Split the string into a list of floats
+    bbox_ratios = [float(x) for x in bbox_ratios_str.split(" ")]
+    
+    # Convert to tensor and reshape
+    all_ratios = torch.tensor(bbox_ratios).reshape(-1, 4)
+    
+    # If frame_indices is provided, select only those frames
+    if frame_indices is not None:
+        # Ensure all indices are within bounds
+        max_index = all_ratios.shape[0] - 1
+        valid_indices = torch.tensor([i for i in frame_indices if 0 <= i <= max_index])
+        
+        # Select the requested frames
+        if len(valid_indices) > 0:
+            all_ratios = all_ratios[valid_indices]
+        else:
+            all_ratios = torch.empty((0, 4))  # Empty tensor if no valid indices
+        
+        # Check if the resulting tensor has the same number of frames as specified in frame_indices
+        if all_ratios.shape[0] < len(frame_indices):
+            print(bbox_ratios_str)
+            print(frame_indices)
+            print(len(bbox_ratios))
+            print(all_ratios.shape)
+            raise ValueError(f"Resulting bbox tensor has fewer frames than specified. "
+                             f"Expected: {len(frame_indices)}, Actual: {all_ratios.shape[0]}")
+    
+    return all_ratios

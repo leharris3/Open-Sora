@@ -40,6 +40,6 @@ prompt_path = "./assets/texts/t2v_samples.txt"
 prompt = None  # prompt has higher priority than prompt_path
 
 # Others
-batch_size = 4
+batch_size = 1
 seed = 42
 save_dir = "./samples/text2bricks-360p-64f/"

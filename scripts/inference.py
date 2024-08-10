@@ -98,6 +98,7 @@ def main():
         model_args["num_frames"] = num_frames
         model_args["ar"] = ar
         model_args["fps"] = fps
+        model_args["bbox_ratios"] = torch.load('bbox_ratios.pth').to(device=device, dtype=dtype)
 
     # ======================================================
     # 4. inference
@@ -124,6 +125,7 @@ def main():
             model_args["num_frames"] = model_args["num_frames"][: len(batch_prompts_raw)]
             model_args["ar"] = model_args["ar"][: len(batch_prompts_raw)]
             model_args["fps"] = model_args["fps"][: len(batch_prompts_raw)]
+            model_args["bbox_ratios"] = model_args["bbox_ratios"][: len(batch_prompts_raw)]
 
         # 4.3. diffusion sampling
         old_sample_idx = sample_idx

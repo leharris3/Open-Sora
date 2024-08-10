@@ -7,7 +7,7 @@ from torchvision.datasets.folder import IMG_EXTENSIONS, pil_loader
 
 from opensora.registry import DATASETS
 
-from .utils import VID_EXTENSIONS, get_transforms_image, get_transforms_video, read_file, temporal_random_crop
+from .utils import VID_EXTENSIONS, get_transforms_image, get_transforms_video, read_file, temporal_random_crop, transform_bbox_ratios
 
 IMG_FPS = 120
 
@@ -133,18 +133,17 @@ class VariableVideoTextDataset(VideoTextDataset):
         file_type = self.get_type(path)
         ar = height / width
     
-        video_fps = 24  # default fps
+        video_fps = 30  # default fps
         if file_type == "video":
             # loading
-            # path = f'data/brick_clips/{path}'
             path = f'/mnt/mir/fan23j/data/nba-plus-statvu-dataset/filtered-clips/{path}'
-            #path = f'/mnt/meg/shahroz/Open-Sora/{path}'
+
             vframes, _, infos = torchvision.io.read_video(filename=path, pts_unit="sec", output_format="TCHW")
             if "video_fps" in infos:
                 video_fps = infos["video_fps"]
 
             # Sampling video frames
-            video = temporal_random_crop(vframes, num_frames, self.frame_interval)
+            video, frame_indices = temporal_random_crop(vframes, num_frames, self.frame_interval)
 
             # transform
             transform = get_transforms_video(self.transform_name, (height, width))
@@ -161,6 +160,8 @@ class VariableVideoTextDataset(VideoTextDataset):
             # repeat
             video = image.unsqueeze(0)
 
+        bbox_ratios = transform_bbox_ratios(sample["bbox_ratios"], frame_indices)
+
         # TCHW -> CTHW
         video = video.permute(1, 0, 2, 3)
         return {
@@ -171,4 +172,5 @@ class VariableVideoTextDataset(VideoTextDataset):
             "width": width,
             "ar": ar,
             "fps": video_fps,
+            "bbox_ratios": bbox_ratios,
         }
