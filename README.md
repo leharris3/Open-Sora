@@ -5,7 +5,7 @@
 }`.
 - [ ] for bbox ratios, interporlate missing frames for each player. len(bbox_ratios) for each player should equal num_frames for video.
 - [ ] perform some validation for the bbox annotations. make sure alignments are correct
-- [ ] write up a script to draw the bbox trajectory given a single player's trajectory. can be simple plot. integrate with wandb logging during inference to plot the bbox trajectory.
+- [ ] write up a helper func to draw the bbox trajectory given a single player's trajectory. can be simple plot. integrate with wandb logging during inference to plot the bbox trajectory.
 
 
 
