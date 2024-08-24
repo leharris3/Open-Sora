@@ -7,7 +7,11 @@ import torch
 
 @torch.no_grad()
 def update_ema(
-    ema_model: torch.nn.Module, model: torch.nn.Module, optimizer=None, decay: float = 0.9999, sharded: bool = True
+    ema_model: torch.nn.Module,
+    model: torch.nn.Module,
+    optimizer=None,
+    decay: float = 0.9999,
+    sharded: bool = True,
 ) -> None:
     """
     Step the EMA model towards the current model.
@@ -27,7 +31,7 @@ def update_ema(
             if param.data.dtype != torch.float32:
                 param_id = id(param)
                 master_param = optimizer.working_to_master_param[param_id]
-                #master_param = optimizer._param_group.working_to_master_param[param_id]
+                # master_param = optimizer._param_group.working_to_master_param[param_id]
                 param_data = master_param.data
             else:
                 param_data = param.data
@@ -60,7 +64,7 @@ class MaskGenerator:
         assert math.isclose(
             sum(mask_ratios.values()), 1.0, abs_tol=1e-6
         ), f"sum of mask_ratios should be 1, got {sum(mask_ratios.values())}"
-        print(f"mask ratios: {mask_ratios}")
+        # print(f"mask ratios: {mask_ratios}")
         self.mask_ratios = mask_ratios
 
     def get_mask(self, x):

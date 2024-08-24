@@ -25,6 +25,7 @@ from colossalai.cluster import DistCoordinator
 from colossalai.nn.optimizer import HybridAdam
 from colossalai.utils import get_current_device, set_seed
 
+from opensora.utils.config_entity import TrainingConfig
 from opensora.datasets.datasets import VariableVideoTextDataset
 from opensora.acceleration.checkpoint import set_grad_checkpoint
 from opensora.acceleration.parallel_states import (
@@ -442,15 +443,16 @@ def main():
     # ======================================================
     # 1. args & cfg
     # ======================================================
-    cfg = parse_configs(training=True)
+
+    args = parse_configs(training=True)
+    cfg: TrainingConfig = TrainingConfig(args)
     exp_name, exp_dir = create_experiment_workspace(cfg)
-    save_training_config(cfg._cfg_dict, exp_dir)
+    save_training_config(cfg.to_dict(), exp_dir)
 
     # ======================================================
     # 2. runtime variables & colossalai launch
     # ======================================================
     assert torch.cuda.is_available(), "Training currently requires at least one GPU."
-    assert cfg.dtype in ["fp16", "bf16"], f"Unknown mixed precision {cfg.dtype}"
 
     # 2.1. colossalai init distributed training
     # we set a very large timeout to avoid some processes exit early
@@ -467,10 +469,9 @@ def main():
         logger = create_logger(None)
     else:
         print("Training configuration:")
-        print(cfg._cfg_dict)
+        pprint(cfg.to_dict())
         logger = create_logger(exp_dir)
         logger.info(f"Experiment directory created at {exp_dir}")
-
         writer = create_tensorboard_writer(exp_dir)
         if cfg.wandb:
             PROJECT = cfg.wandb_project_name
@@ -478,7 +479,7 @@ def main():
                 project=PROJECT,
                 entity=cfg.wandb_project_entity,
                 name=exp_name,
-                config=cfg._cfg_dict,
+                config=cfg.to_dict(),
             )
 
     # 2.3. initialize ColossalAI booster
@@ -544,14 +545,14 @@ def main():
     # 4.1. build model
 
     # the autoencoder, compresses videos by spatial and temp axis
-    vae = build_module(cfg.vae, MODELS)
+    vae = build_module(cfg.vae.to_dict(), MODELS)
     input_size = (dataset.num_frames, *dataset.image_size)
     latent_size = vae.get_latent_size(input_size)
 
     # the diffusion transformer
     # we use: STDiT2-XL/2
     model = build_module(
-        cfg.model,
+        cfg.model.to_dict(),
         MODELS,
         input_size=latent_size,
         in_channels=vae.out_channels,
@@ -573,8 +574,8 @@ def main():
     model = model.to(device, dtype)
 
     # 4.4. build scheduler
-    scheduler = build_module(cfg.scheduler, SCHEDULERS)
-    scheduler_inference = build_module(cfg.scheduler_inference, SCHEDULERS)
+    scheduler = build_module(cfg.scheduler.to_dict(), SCHEDULERS)
+    scheduler_inference = build_module(cfg.scheduler_inference.to_dict(), SCHEDULERS)
 
     # 4.5. setup optimizer
     optimizer = HybridAdam(

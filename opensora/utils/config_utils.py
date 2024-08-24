@@ -4,14 +4,9 @@ import os
 from typing import Tuple
 from glob import glob
 
+from opensora.utils.config_entity import TrainingConfig
 from mmengine.config import Config
 from torch.utils.tensorboard import SummaryWriter
-
-
-class TrainingConfig:
-
-    def __init__(self, args) -> None:
-        pass
 
 
 def load_prompts(prompt_path):
@@ -21,6 +16,10 @@ def load_prompts(prompt_path):
 
 
 def parse_args(training=False):
+    """
+    Parse command line arguments.
+    """
+
     parser = argparse.ArgumentParser()
 
     # model config
@@ -199,27 +198,31 @@ def merge_args(cfg, args, training=False):
 
 
 def parse_configs(training=False) -> Config:
+    """
+    Parse command line args and return a `mmengine.config` object.
+    """
+
     args = parse_args(training)
     cfg = Config.fromfile(args.config)
     cfg = merge_args(cfg, args, training)
     return cfg
 
 
-def create_experiment_workspace(cfg) -> Tuple[str, str]:
+def create_experiment_workspace(cfg: TrainingConfig) -> Tuple[str, str]:
     """
     This function creates a folder for experiment tracking.
-
     Args:
         args: The parsed arguments.
 
     Returns:
         exp_dir: The path to the experiment folder.
     """
-    # Make outputs folder (holds all experiment subfolders)
+
+    # make output folder (holds all experiment subfolders)
     os.makedirs(cfg.outputs, exist_ok=True)
 
     # Create an experiment folder
-    model_name = cfg.model["type"].replace("/", "-")
+    model_name = cfg.model.type.replace("/", "-")
     exp_name = f"{cfg.exp_id}-{model_name}"
     exp_dir = f"{cfg.outputs}/{exp_name}"
     os.makedirs(exp_dir, exist_ok=True)
