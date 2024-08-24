@@ -46,7 +46,12 @@ class VariableVideoBatchSampler(DistributedSampler):
         num_bucket_build_workers: int = 1,
     ) -> None:
         super().__init__(
-            dataset=dataset, num_replicas=num_replicas, rank=rank, shuffle=shuffle, seed=seed, drop_last=drop_last
+            dataset=dataset,
+            num_replicas=num_replicas,
+            rank=rank,
+            shuffle=shuffle,
+            seed=seed,
+            drop_last=drop_last,
         )
         self.dataset = dataset
         self.bucket = Bucket(bucket_config)
@@ -60,7 +65,9 @@ class VariableVideoBatchSampler(DistributedSampler):
     def group_by_bucket(self) -> dict:
         bucket_sample_dict = OrderedDict()
 
-        pandarallel.initialize(nb_workers=self.num_bucket_build_workers, progress_bar=False)
+        pandarallel.initialize(
+            nb_workers=self.num_bucket_build_workers, progress_bar=False
+        )
         bucket_ids = self.dataset.data.parallel_apply(
             apply,
             axis=1,
@@ -138,16 +145,24 @@ class VariableVideoBatchSampler(DistributedSampler):
 
         # randomize the access order
         if self.shuffle:
-            bucket_id_access_order_indices = torch.randperm(len(bucket_id_access_order), generator=g).tolist()
-            bucket_id_access_order = [bucket_id_access_order[i] for i in bucket_id_access_order_indices]
+            bucket_id_access_order_indices = torch.randperm(
+                len(bucket_id_access_order), generator=g
+            ).tolist()
+            bucket_id_access_order = [
+                bucket_id_access_order[i] for i in bucket_id_access_order_indices
+            ]
 
         # make the number of bucket accesses divisible by dp size
         remainder = len(bucket_id_access_order) % self.num_replicas
         if remainder > 0:
             if self.drop_last:
-                bucket_id_access_order = bucket_id_access_order[: len(bucket_id_access_order) - remainder]
+                bucket_id_access_order = bucket_id_access_order[
+                    : len(bucket_id_access_order) - remainder
+                ]
             else:
-                bucket_id_access_order += bucket_id_access_order[: self.num_replicas - remainder]
+                bucket_id_access_order += bucket_id_access_order[
+                    : self.num_replicas - remainder
+                ]
 
         # prepare each batch from its bucket
         # according to the predefined bucket access order
@@ -166,7 +181,9 @@ class VariableVideoBatchSampler(DistributedSampler):
                 bucket_last_consumed[bucket_id] = bucket_bs
 
         for i in range(start_iter_idx, num_iters):
-            bucket_access_list = bucket_id_access_order[i * self.num_replicas : (i + 1) * self.num_replicas]
+            bucket_access_list = bucket_id_access_order[
+                i * self.num_replicas : (i + 1) * self.num_replicas
+            ]
             self.last_micro_batch_access_index += self.num_replicas
 
             # comppute the data samples consumed by each access
@@ -174,7 +191,9 @@ class VariableVideoBatchSampler(DistributedSampler):
             for bucket_id in bucket_access_list:
                 bucket_bs = self.bucket.get_batch_size(bucket_id)
                 last_consumed_index = bucket_last_consumed.get(bucket_id, 0)
-                bucket_access_boundaries.append([last_consumed_index, last_consumed_index + bucket_bs])
+                bucket_access_boundaries.append(
+                    [last_consumed_index, last_consumed_index + bucket_bs]
+                )
 
                 # update consumption
                 if bucket_id in bucket_last_consumed:
@@ -189,7 +208,9 @@ class VariableVideoBatchSampler(DistributedSampler):
 
             # encode t, h, w into the sample index
             real_t, real_h, real_w = self.bucket.get_thw(bucket_id)
-            cur_micro_batch = [f"{idx}-{real_t}-{real_h}-{real_w}" for idx in cur_micro_batch]
+            cur_micro_batch = [
+                f"{idx}-{real_t}-{real_h}-{real_w}" for idx in cur_micro_batch
+            ]
             yield cur_micro_batch
 
         self._reset()
@@ -202,12 +223,16 @@ class VariableVideoBatchSampler(DistributedSampler):
         # not accurate during multi-workers and data prefetching
         # thus, we need the user to pass the actual steps which have been executed
         # to calculate the correct last_micro_batch_access_index
-        return {"seed": self.seed, "epoch": self.epoch, "last_micro_batch_access_index": num_steps * self.num_replicas}
+        return {
+            "seed": self.seed,
+            "epoch": self.epoch,
+            "last_micro_batch_access_index": num_steps * self.num_replicas,
+        }
 
     def load_state_dict(self, state_dict: dict) -> None:
         self.__dict__.update(state_dict)
 
-    def _print_bucket_info(self, bucket_sample_dict: dict, verbose=True) -> None:
+    def _print_bucket_info(self, bucket_sample_dict: dict, verbose=False) -> None:
         total_samples = 0
         num_batch = 0
         num_dict = {}
@@ -221,7 +246,9 @@ class VariableVideoBatchSampler(DistributedSampler):
             num_hwt_dict[k[:-1]] += size
             num_batch += size // self.bucket.get_batch_size(k[:-1])
         if dist.get_rank() == 0 and verbose:
-            print(f"Total training samples: {total_samples}, num buckets: {len(num_dict)}")
+            print(
+                f"Total training samples: {total_samples}, num buckets: {len(num_dict)}"
+            )
             print("Bucket samples:")
             pprint(num_dict)
             print("Bucket samples by aspect ratio:")

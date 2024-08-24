@@ -36,8 +36,8 @@ model = dict(
     from_pretrained=None,
     input_sq_size=512,  # pretrained model is trained on 512x512
     qk_norm=True,
-    enable_flash_attn=True,
-    enable_layernorm_kernel=True,
+    enable_flash_attn=False,
+    enable_layernorm_kernel=False,
 )
 vae = dict(
     type="VideoAutoencoderKL",
@@ -45,13 +45,6 @@ vae = dict(
     micro_batch_size=4,
     local_files_only=True,
 )
-# text_encoder = dict(
-#     type="t5",
-#     from_pretrained="DeepFloyd/t5-v1_1-xxl",
-#     model_max_length=200,
-#     shardformer=True,
-#     local_files_only=True,
-# )
 scheduler = dict(
     type="iddpm",
     timestep_respacing="",
@@ -66,7 +59,7 @@ scheduler_inference = dict(
 # Others
 seed = 42
 outputs = "outputs"
-wandb = True
+wandb = False
 
 epochs = 1000
 log_every = 10
@@ -81,7 +74,7 @@ batch_size = None
 grad_clip = 1.0
 
 eval_prompts = [
-        "A basketball player missing a three-point shot",  
+    "A basketball player missing a three-point shot",
 ]
 
 eval_image_size = (360, 640)
