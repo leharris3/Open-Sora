@@ -38,6 +38,7 @@ from opensora.models.stdit.stdit2 import STDiT2
 from opensora.utils.config_entity import TrainingConfig
 from opensora.utils.rng import save_rng_state, set_seed_custom, load_rng_state
 from opensora.utils.lr_schedulers import ConstantWarmupLR, OneCycleScheduler
+from opensora.utils.wandb_logging import write_sample, log_sample
 from opensora.datasets.datasets import VariableVideoTextDataset
 from opensora.acceleration.checkpoint import set_grad_checkpoint
 from opensora.acceleration.parallel_states import (
@@ -227,31 +228,16 @@ def main():
     scheduler_inference = build_module(cfg.scheduler_inference.to_dict(), SCHEDULERS)
 
     # 4.5. setup optimizer
-    optimizer = HybridAdam(
+    optimizer: HybridAdam = HybridAdam(
         filter(lambda p: p.requires_grad, model.parameters()),
         lr=cfg.lr,
         weight_decay=0,
         adamw_mode=True,
     )
-    if cfg.load is not None:
-        lr_scheduler = None
-    else:
-        if cfg.lr_schedule == "cosine_const":
-            lr_scheduler = ConstantWarmupLR(
-                optimizer, factor=1, warmup_steps=cfg.warmup_steps, last_epoch=-1
-            )
-        elif cfg.lr_schedule == "1cycle":
-            lr_scheduler = OneCycleScheduler(
-                optimizer,
-                min_lr=cfg.min_lr,
-                max_lr=cfg.max_lr,
-                final_lr=cfg.lr,
-                warmup_steps=cfg.warmup_steps,
-                cooldown_steps=cfg.cooldown_steps,
-                anneal_strategy=cfg.anneal_strategy,
-            )
-        else:
-            lr_scheduler = None
+
+    lr_scheduler: ConstantWarmupLR = ConstantWarmupLR(
+        optimizer, factor=1, warmup_steps=cfg.warmup_steps, last_epoch=-1
+    )
 
     # 4.6. prepare for training
     if cfg.grad_checkpoint:
@@ -259,8 +245,9 @@ def main():
     model.train()
     update_ema(ema, model, decay=0, sharded=False)
     ema.eval()
-    if cfg.mask_ratios is not None:
-        mask_generator = MaskGenerator(cfg.mask_ratios)
+
+    # TODO: mask ratios are never `None`
+    mask_generator = MaskGenerator(cfg.mask_ratios)
 
     # =======================================================
     # 5. boost model for distributed training with colossalai
@@ -274,12 +261,11 @@ def main():
     )
     torch.set_default_dtype(torch.float)
     logger.info("Boost model for distributed training")
-    if cfg.dataset.type == "VariableVideoTextDataset":
-        num_steps_per_epoch = (
-            dataloader.batch_sampler.get_num_batch() // dist.get_world_size()
-        )
-    else:
-        num_steps_per_epoch = len(dataloader)
+
+    # TODO: we always use VariableVideoTextDataset
+    num_steps_per_epoch = (
+        dataloader.batch_sampler.get_num_batch() // dist.get_world_size()
+    )
 
     # =======================================================
     # 6. training loop
@@ -291,36 +277,11 @@ def main():
         if cfg.dataset.type == "VariableVideoTextDataset"
         else None
     )
-    # 6.1. resume training
-    if cfg.load is not None:
-        logger.info("Loading checkpoint")
-        ret = load(
-            booster,
-            model,
-            ema,
-            optimizer,
-            None,  # lr_scheduler,
-            cfg.load,
-            sampler=sampler_to_io if not cfg.start_from_scratch else None,
-        )
-        if not cfg.start_from_scratch:
-            start_epoch, start_step, sampler_start_idx = ret
-        logger.info(
-            f"Loaded checkpoint {cfg.load} at epoch {start_epoch} step {start_step}"
-        )
 
-        optim_lr = optimizer.param_groups[0]["lr"]
-        logger.info(
-            f"Overwriting loaded learning rate from {optim_lr} to config lr={cfg.lr}"
-        )
-        for g in optimizer.param_groups:
-            g["lr"] = cfg.lr
+    # TODO: we never load from a checkpoint
     logger.info(
         f"Training for {cfg.epochs} epochs with {num_steps_per_epoch} steps per epoch"
     )
-
-    if cfg.dataset.type == "VideoTextDataset":
-        dataloader.sampler.set_start_index(sampler_start_idx)
 
     model_sharding(ema)
     # log prompts for pre-training ckpt
@@ -337,7 +298,7 @@ def main():
         device,
     )
     log_sample(coordinator.is_master(), cfg, start_epoch, exp_dir, first_global_step)
-    print("First global step done")
+    logger.info("First global step done")
 
     # 6.2. training loop
     for epoch in range(start_epoch, cfg.epochs):
