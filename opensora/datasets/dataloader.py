@@ -110,6 +110,9 @@ def prepare_variable_dataloader(
     num_bucket_build_workers=1,
     **kwargs,
 ):
+    """
+    TODO: we arn't usign the `batch_size` arg at the moment.
+    """
     _kwargs = kwargs.copy()
     process_group = process_group or _get_default_group()
     batch_sampler = VariableVideoBatchSampler(

@@ -4,6 +4,9 @@ from typing import Dict, Optional, Tuple, Any, List
 class DatasetConfig:
     def __init__(self, args: Dict) -> None:
         self.type: Optional[str] = args["type"]
+        assert self.type in [
+            "VariableVideoTextDataset"
+        ], f"Error: expected dataset.type in {['VariableVideoTextDataset']}"
         self.data_path: Optional[str] = args["data_path"]
         self.num_frames: Optional[int] = args["num_frames"]
         self.frame_interval: Optional[int] = args["frame_interval"]
@@ -86,18 +89,25 @@ class SchedulerInferenceConfig:
 
 
 class TrainingConfig:
+    """
+    Object containing all arguments required to execute a training run.
+    """
+
     def __init__(self, args) -> None:
         self.dataset: DatasetConfig = DatasetConfig(args.dataset)
         self.bucket_config: Dict[str, Dict] = args.bucket_config
+        assert (
+            self.bucket_config is not None
+        ), f"Error: `bucket_config` must not be `None`"
         self.num_workers: Optional[int] = args.num_workers
         self.num_bucket_build_workers: Optional[int] = args.num_bucket_build_workers
 
-        assert args.dtype in [
+        self.dtype: str = args.dtype
+        assert self.dtype in [
             "fp32",
             "fp16",
             "bf16",
         ], f"Error: invalid dtype, expected dtype in {['fp32', 'fp16', 'bf16']}"
-        self.dtype: str = args.dtype
         self.grad_checkpoint: bool = args.grad_checkpoint
         self.plugin: str = args.plugin
         self.sp_size: Optional[int] = args.sp_size

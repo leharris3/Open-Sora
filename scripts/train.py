@@ -6,9 +6,15 @@ import wandb
 import torch
 import math
 import warnings
+import logging
 
 # surpress warnings
 warnings.filterwarnings("ignore")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(name)-12s %(levelname)-8s %(message)s",
+    datefmt="%m-%d %H:%M",
+)
 
 import torch.distributed as dist
 
@@ -16,16 +22,22 @@ from copy import deepcopy
 from datetime import timedelta
 from pprint import pprint
 from tqdm import tqdm
-from typing import List
+from typing import List, Dict, Optional, Tuple, Union, Any
 
-from torch.optim.lr_scheduler import LRScheduler as _LRScheduler
 from colossalai.booster import Booster
 from colossalai.booster.plugin import LowLevelZeroPlugin
 from colossalai.cluster import DistCoordinator
 from colossalai.nn.optimizer import HybridAdam
 from colossalai.utils import get_current_device, set_seed
 
+from opensora.models.vae import VideoAutoencoderKL
+
+# TODO: use STDiT3 as DiT backbone?
+# https://huggingface.co/hpcai-tech/OpenSora-STDiT-v3
+from opensora.models.stdit.stdit2 import STDiT2
 from opensora.utils.config_entity import TrainingConfig
+from opensora.utils.rng import save_rng_state, set_seed_custom, load_rng_state
+from opensora.utils.lr_schedulers import ConstantWarmupLR, OneCycleScheduler
 from opensora.datasets.datasets import VariableVideoTextDataset
 from opensora.acceleration.checkpoint import set_grad_checkpoint
 from opensora.acceleration.parallel_states import (
@@ -62,208 +74,8 @@ from opensora.utils.misc import (
 )
 from opensora.utils.train_utils import MaskGenerator, update_ema
 
-
-class WarmupScheduler(_LRScheduler):
-    """Starts with a log space warmup lr schedule until it reaches N epochs then applies
-    the specific scheduler (For example: ReduceLROnPlateau).
-
-    Args:
-        optimizer (:class:`torch.optim.Optimizer`): Wrapped optimizer.
-        warmup_epochs (int): Number of epochs to warmup lr in log space until starting applying the scheduler.
-        after_scheduler (:class:`torch.optim.lr_scheduler`): After warmup_epochs, use this scheduler.
-        last_epoch (int, optional): The index of last epoch, defaults to -1. When last_epoch=-1,
-            the schedule is started from the beginning or When last_epoch=-1, sets initial lr as lr.
-    """
-
-    def __init__(
-        self,
-        optimizer,
-        warmup_epochs: int,
-        after_scheduler: _LRScheduler,
-        last_epoch: int = -1,
-    ):
-        self.warmup_epochs = warmup_epochs
-        self.after_scheduler = after_scheduler
-        self.finished = False
-        self.min_lr = 1e-7
-        super().__init__(optimizer, last_epoch)
-
-    def get_lr(self):
-        if self.last_epoch >= self.warmup_epochs:
-            if not self.finished:
-                self.after_scheduler.base_lrs = [
-                    group["lr"] for group in self.optimizer.param_groups
-                ]
-                self.finished = True
-            return self.after_scheduler.get_lr()
-
-        # log linear
-        # return [self.min_lr * ((lr / self.min_lr) ** ((self.last_epoch + 1) / self.warmup_epochs)) for lr in self.base_lrs]
-
-        # cosine warmup
-        return [
-            self.min_lr
-            + (lr - self.min_lr)
-            * 0.5
-            * (
-                1
-                - torch.cos(
-                    torch.tensor((self.last_epoch + 1) / self.warmup_epochs * torch.pi)
-                )
-            )
-            for lr in self.base_lrs
-        ]
-
-    def step(self, epoch: int = None):
-        if self.finished:
-            if epoch is None:
-                self.after_scheduler.step(None)
-            else:
-                self.after_scheduler.step(epoch - self.warmup_epochs)
-        else:
-            return super().step(epoch)
-
-
-class ConstantWarmupLR(WarmupScheduler):
-    """Multistep learning rate scheduler with warmup.
-
-    Args:
-        optimizer (:class:`torch.optim.Optimizer`): Wrapped optimizer.
-        total_steps (int): Number of total training steps.
-        warmup_steps (int, optional): Number of warmup steps, defaults to 0.
-        gamma (float, optional): Multiplicative factor of learning rate decay, defaults to 0.1.
-        num_steps_per_epoch (int, optional): Number of steps per epoch, defaults to -1.
-        last_epoch (int, optional): The index of last epoch, defaults to -1. When last_epoch=-1,
-            the schedule is started from the beginning or When last_epoch=-1, sets initial lr as lr.
-    """
-
-    def __init__(
-        self,
-        optimizer,
-        factor: float,
-        warmup_steps: int = 0,
-        last_epoch: int = -1,
-        **kwargs,
-    ):
-        base_scheduler = torch.optim.lr_scheduler.ConstantLR(
-            optimizer, factor=1, total_iters=-1
-        )
-        super().__init__(optimizer, warmup_steps, base_scheduler, last_epoch=last_epoch)
-
-
-class OneCycleScheduler(_LRScheduler):
-    """Implements the 1-cycle learning rate policy with warmup and cooldown.
-
-    Args:
-        optimizer (Optimizer): Wrapped optimizer.
-        max_lr (float or list): Upper learning rate boundaries in the cycle for each parameter group.
-        total_steps (int): The total number of steps in the cycle.
-        warmup_steps (int): Number of steps to warm up the learning rate.
-        cooldown_steps (int): Number of steps to cool down the learning rate.
-        final_lr (float): The final learning rate at the end of the cooldown.
-        min_lr (float): The minimum learning rate to start with.
-        anneal_strategy (str): {'cos', 'linear'} Learning rate annealing strategy.
-        last_epoch (int): The index of last epoch. Default: -1.
-    """
-
-    def __init__(
-        self,
-        optimizer,
-        max_lr,
-        warmup_steps,
-        cooldown_steps,
-        final_lr=0.001,
-        min_lr=1e-7,
-        anneal_strategy="cos",
-        last_epoch=-1,
-    ):
-        self.max_lr = max_lr
-        self.total_steps = 1e6
-        self.warmup_steps = warmup_steps
-        self.cooldown_steps = cooldown_steps
-        self.final_lr = final_lr
-        self.min_lr = min_lr
-        self.anneal_strategy = anneal_strategy
-
-        self.step_size_up = self.warmup_steps
-        self.step_size_down = self.cooldown_steps
-
-        self.anneal_func = (
-            self._cosine_annealing
-            if self.anneal_strategy == "cos"
-            else self._linear_annealing
-        )
-
-        super(OneCycleScheduler, self).__init__(optimizer, last_epoch)
-
-    def _cosine_annealing(self, step, start_lr, end_lr, step_size):
-        cos_out = torch.cos(torch.tensor(math.pi * step / step_size)) + 1
-        return end_lr + (start_lr - end_lr) / 2.0 * cos_out
-
-    def _linear_annealing(self, step, start_lr, end_lr, step_size):
-        return end_lr + (start_lr - end_lr) * (step / step_size)
-
-    def get_lr(self):
-        if self.last_epoch < self.step_size_up:
-            # Warm-up phase
-            lr = [
-                self.anneal_func(
-                    self.last_epoch, self.min_lr, self.max_lr, self.step_size_up
-                )
-                for _ in self.base_lrs
-            ]
-        elif self.last_epoch < self.step_size_up + self.step_size_down:
-            # Cooldown phase
-            step = self.last_epoch - self.step_size_up
-            lr = [
-                self.anneal_func(step, self.max_lr, self.final_lr, self.step_size_down)
-                for _ in self.base_lrs
-            ]
-        else:
-            # Constant phase
-            lr = [self.final_lr for _ in self.base_lrs]
-        return lr
-
-    def step(self, epoch=None):
-        if self.last_epoch == -1:
-            if epoch is None:
-                self.last_epoch = 0
-            else:
-                self.last_epoch = epoch
-        else:
-            self.last_epoch = epoch if epoch is not None else self.last_epoch + 1
-        for param_group, lr in zip(self.optimizer.param_groups, self.get_lr()):
-            param_group["lr"] = lr
-
-
-def save_rng_state():
-    rng_state = {
-        "torch": torch.get_rng_state(),
-        "torch_cuda": (
-            torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
-        ),
-        "numpy": np.random.get_state(),
-        "random": random.getstate(),
-    }
-    return rng_state
-
-
-def load_rng_state(rng_state):
-    torch.set_rng_state(rng_state["torch"])
-    if rng_state["torch_cuda"] is not None:
-        torch.cuda.set_rng_state_all(rng_state["torch_cuda"])
-    np.random.set_state(rng_state["numpy"])
-    random.setstate(rng_state["random"])
-
-
-# from mmengine.runner import set_random_seed
-def set_seed_custom(seed):
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
-    random.seed(seed)
-    # set_random_seed(seed=seed)
+CAPTION_CHANNELS = 4096
+MODEL_MAX_LENGTH = 200
 
 
 def calculate_weight_norm(model):
@@ -273,159 +85,6 @@ def calculate_weight_norm(model):
         total_norm += param_norm.item() ** 2
     total_norm = total_norm**0.5
     return total_norm
-
-
-def ensure_parent_directory_exists(file_path):
-    directory_path = os.path.dirname(file_path)
-    if not os.path.exists(directory_path):
-        os.makedirs(directory_path)
-        print(f"Created directory: {directory_path}")
-
-
-# TODO: figure out what the heck this func is doing
-z_log = None
-
-
-def write_sample(
-    model, vae, scheduler, cfg, epoch, exp_dir, global_step, dtype, device
-):
-    prompts = cfg.eval_prompts[dist.get_rank() :: dist.get_world_size()]
-    if prompts:
-        global z_log
-        rng_state = save_rng_state()
-        back_to_train_model = model.training
-        back_to_train_vae = vae.training
-        vae = vae.eval()
-        model = model.eval()
-
-        save_dir = os.path.join(exp_dir, f"epoch{epoch}-global_step{global_step + 1}")
-
-        with torch.no_grad():
-            image_size = cfg.eval_image_size
-            num_frames = cfg.eval_num_frames
-            fps = cfg.eval_fps
-            eval_batch_size = cfg.eval_batch_size
-
-            input_size = (num_frames, *image_size)
-            latent_size = vae.get_latent_size(input_size)
-            if z_log is None:
-                rng = np.random.default_rng(seed=42)
-                z_log = rng.normal(size=(len(prompts), vae.out_channels, *latent_size))
-            z = torch.tensor(z_log, device=device, dtype=float).to(dtype=dtype)
-            set_seed_custom(42)
-
-            samples = []
-
-            conditions = torch.load("instance_trajs.pth")
-
-            # transfer conditions to gpu
-            for key in conditions:
-                conditions[key] = conditions[key].to(device, dtype)
-
-            for i in range(0, len(prompts), eval_batch_size):
-                batch_prompts = prompts[i : i + eval_batch_size]
-                batch_z = z[i : i + eval_batch_size]
-                batch_samples = scheduler.sample(
-                    model,
-                    z=batch_z,
-                    prompts=batch_prompts,
-                    device=device,
-                    additional_args=dict(
-                        height=torch.tensor(
-                            [image_size[0]], device=device, dtype=dtype
-                        ).repeat(len(batch_prompts)),
-                        width=torch.tensor(
-                            [image_size[1]], device=device, dtype=dtype
-                        ).repeat(len(batch_prompts)),
-                        num_frames=torch.tensor(
-                            [num_frames], device=device, dtype=dtype
-                        ).repeat(len(batch_prompts)),
-                        ar=torch.tensor(
-                            [image_size[0] / image_size[1]], device=device, dtype=dtype
-                        ).repeat(len(batch_prompts)),
-                        fps=torch.tensor([fps], device=device, dtype=dtype).repeat(
-                            len(batch_prompts)
-                        ),
-                        conditions=conditions,
-                    ),
-                )
-
-                batch_samples = vae.decode(batch_samples.to(dtype))
-                samples.extend(batch_samples)
-
-            # 4.4. save samples
-            # if coordinator.is_master():
-            for sample_idx, sample in enumerate(samples):
-                id = sample_idx * dist.get_world_size() + dist.get_rank()
-                save_path = os.path.join(save_dir, f"sample_{id}")
-                ensure_parent_directory_exists(save_path)
-                save_sample(
-                    sample,
-                    fps=fps,
-                    save_path=save_path,
-                )
-
-        if back_to_train_model:
-            model = model.train()
-        if back_to_train_vae:
-            vae = vae.train()
-
-        load_rng_state(rng_state)
-
-
-def is_file_complete(file_path, interval=1, timeout=60):
-    previous_size = -1
-    elapsed_time = 0
-
-    while elapsed_time < timeout:
-        if os.path.isfile(file_path):
-            current_size = os.path.getsize(file_path)
-            if current_size == previous_size:
-                return True  # File size hasn't changed, assuming file is complete
-            previous_size = current_size
-
-        time.sleep(interval)
-        elapsed_time += interval
-
-    return False
-
-
-def log_sample(
-    is_master,
-    cfg,
-    epoch,
-    exp_dir,
-    global_step,
-    check_interval=1,
-    size_stable_interval=1,
-):
-    if cfg.wandb:
-        for sample_idx, prompt in enumerate(cfg.eval_prompts):
-            save_dir = os.path.join(
-                exp_dir, f"epoch{epoch}-global_step{global_step + 1}"
-            )
-            save_path = os.path.join(save_dir, f"sample_{sample_idx}")
-            file_path = os.path.abspath(save_path + ".mp4")
-            while not os.path.isfile(file_path):
-                time.sleep(check_interval)
-
-            # File exists, now check if it is complete
-            if is_file_complete(file_path, interval=size_stable_interval):
-                if is_master:
-                    wandb.log(
-                        {
-                            f"eval/prompt_{sample_idx}": wandb.Video(
-                                file_path,
-                                caption=prompt,
-                                format="mp4",
-                                fps=cfg.eval_fps,
-                            )
-                        },
-                        step=global_step,
-                    )
-                    print(f"{file_path} logged")
-            else:
-                print(f"{file_path} not found, skip logging.")
 
 
 def push_to_device(item, device, dtype):
@@ -440,18 +99,13 @@ def push_to_device(item, device, dtype):
 
 
 def main():
-    # ======================================================
-    # 1. args & cfg
-    # ======================================================
 
+    # parse command-line args
     args = parse_configs(training=True)
     cfg: TrainingConfig = TrainingConfig(args)
     exp_name, exp_dir = create_experiment_workspace(cfg)
     save_training_config(cfg.to_dict(), exp_dir)
 
-    # ======================================================
-    # 2. runtime variables & colossalai launch
-    # ======================================================
     assert torch.cuda.is_available(), "Training currently requires at least one GPU."
 
     # 2.1. colossalai init distributed training
@@ -464,13 +118,12 @@ def main():
     device = get_current_device()
     dtype = to_torch_dtype(cfg.dtype)
 
-    # 2.2. init logger, tensorboard & wandb
     if not coordinator.is_master():
         logger = create_logger(None)
     else:
-        print("Training configuration:")
-        pprint(cfg.to_dict())
         logger = create_logger(exp_dir)
+        logger.info("Training configuration:")
+        pprint(cfg.to_dict())
         logger.info(f"Experiment directory created at {exp_dir}")
         writer = create_tensorboard_writer(exp_dir)
         if cfg.wandb:
@@ -527,17 +180,11 @@ def main():
         process_group=get_data_parallel_group(),
     )
     # TODO: use plugin's prepare dataloader
-    if cfg.bucket_config is None:
-        dataloader = prepare_dataloader(**dataloader_args)
-    else:
-        dataloader = prepare_variable_dataloader(
-            bucket_config=cfg.bucket_config,
-            num_bucket_build_workers=cfg.num_bucket_build_workers,
-            **dataloader_args,
-        )
-    if cfg.dataset.type == "VideoTextDataset":
-        total_batch_size = cfg.batch_size * dist.get_world_size() // cfg.sp_size
-        logger.info(f"Total batch size: {total_batch_size}")
+    dataloader = prepare_variable_dataloader(
+        bucket_config=cfg.bucket_config,
+        num_bucket_build_workers=cfg.num_bucket_build_workers,
+        **dataloader_args,
+    )
 
     # ======================================================
     # 4. build model
@@ -545,29 +192,31 @@ def main():
     # 4.1. build model
 
     # the autoencoder, compresses videos by spatial and temp axis
-    vae = build_module(cfg.vae.to_dict(), MODELS)
+    vae: VideoAutoencoderKL = build_module(cfg.vae.to_dict(), MODELS)
     input_size = (dataset.num_frames, *dataset.image_size)
     latent_size = vae.get_latent_size(input_size)
 
-    # the diffusion transformer
+    # construct the  diffusion transformer
     # we use: STDiT2-XL/2
-    model = build_module(
+    model: STDiT2 = build_module(
         cfg.model.to_dict(),
         MODELS,
         input_size=latent_size,
         in_channels=vae.out_channels,
-        caption_channels=4096,
-        model_max_length=200,
+        caption_channels=CAPTION_CHANNELS,
+        model_max_length=MODEL_MAX_LENGTH,
     )
+    # get parameter counts
     model_numel, model_numel_trainable = get_model_numel(model)
     logger.info(
         f"Trainable model params: {format_numel_str(model_numel_trainable)}, Total model params: {format_numel_str(model_numel)}"
     )
 
     # 4.2. create ema
-    ema = deepcopy(model).to(torch.float32).to(device)
+    # model that tracks exponential moving avg of params
+    ema: STDiT2 = deepcopy(model).to(torch.float32).to(device)
     requires_grad(ema, False)
-    ema_shape_dict = record_model_param_shape(ema)
+    ema_shape_dict: Dict = record_model_param_shape(ema)
 
     # 4.3. move to device
     vae = vae.to(device, dtype)
