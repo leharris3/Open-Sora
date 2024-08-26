@@ -9,7 +9,7 @@ class DatasetConfig:
         ], f"Error: expected dataset.type in {['VariableVideoTextDataset']}"
         self.data_path: Optional[str] = args["data_path"]
         self.num_frames: Optional[int] = args["num_frames"]
-        self.frame_interval: Optional[int] = args["frame_interval"]
+        self.frame_interval: int = args["frame_interval"]
         self.image_size: Tuple[Optional[int], Optional[int]] = args["image_size"]
         self.transform_name: Optional[str] = args["transform_name"]
 
@@ -110,7 +110,7 @@ class TrainingConfig:
         ], f"Error: invalid dtype, expected dtype in {['fp32', 'fp16', 'bf16']}"
         self.grad_checkpoint: bool = args.grad_checkpoint
         self.plugin: str = args.plugin
-        self.sp_size: Optional[int] = args.sp_size
+        self.sp_size: int = args.sp_size
 
         self.model: DiTModelConfig = DiTModelConfig(args.model)
         self.vae: VAEConfig = VAEConfig(args.vae)

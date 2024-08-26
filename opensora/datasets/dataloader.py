@@ -8,7 +8,7 @@ from torch.distributed.distributed_c10d import _get_default_group
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.distributed import DistributedSampler
 
-from .sampler import VariableVideoBatchSampler
+from .sampler import VariableVideoBatchSampler, VariableNBAClipsBatchSampler
 
 
 class StatefulDistributedSampler(DistributedSampler):
@@ -115,7 +115,7 @@ def prepare_variable_dataloader(
     """
     _kwargs = kwargs.copy()
     process_group = process_group or _get_default_group()
-    batch_sampler = VariableVideoBatchSampler(
+    batch_sampler = VariableNBAClipsBatchSampler(
         dataset,
         bucket_config,
         num_replicas=process_group.size(),
@@ -123,7 +123,7 @@ def prepare_variable_dataloader(
         shuffle=shuffle,
         seed=seed,
         drop_last=drop_last,
-        verbose=True,
+        verbose=False,
         num_bucket_build_workers=num_bucket_build_workers,
     )
 

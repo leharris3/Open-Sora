@@ -249,6 +249,7 @@ class STDiT2(PreTrainedModel):
         self.t_embedder = TimestepEmbedder(config.hidden_size)
         self.t_block = nn.Sequential(nn.SiLU(), nn.Linear(config.hidden_size, 6 * config.hidden_size, bias=True))
         self.t_block_temp = nn.Sequential(nn.SiLU(), nn.Linear(config.hidden_size, 3 * config.hidden_size, bias=True))  # new
+        
         self.y_embedder = CaptionEmbedder(
             in_channels=config.caption_channels,
             hidden_size=config.hidden_size,

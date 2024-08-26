@@ -127,7 +127,7 @@ class Bucket:
     def get_prob(self, bucket_id):
         return self.bucket_probs[bucket_id[0]][bucket_id[1]]
 
-    def get_batch_size(self, bucket_id):
+    def get_batch_size(self, bucket_id) -> int:
         return self.bucket_bs[bucket_id[0]][bucket_id[1]]
 
     def __len__(self):
